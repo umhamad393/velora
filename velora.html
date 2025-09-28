@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Velora: Advanced AI Assistant</title>
+    <!-- Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Lucide Icons for aesthetic details -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom styles for a dark, futuristic look */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Dark Silver/Charcoal background with subtle texture */
+            background: linear-gradient(135deg, #1f2937 0%, #0f172a 100%);
+            min-height: 100vh;
+        }
+        /* Custom scrollbar for chat window */
+        .chat-window::-webkit-scrollbar { width: 8px; }
+        .chat-window::-webkit-scrollbar-thumb {
+            background-color: #475569; /* Slate 600 */
+            border-radius: 4px;
+        }
+        .chat-window::-webkit-scrollbar-track {
+            background-color: #1f2937; /* Gray 800 */
+        }
+        /* Fancy glow for the send button on hover */
+        #send-button {
+            transition: all 0.3s ease;
+            box-shadow: 0 0 5px rgba(59, 130, 246, 0.5); /* Blue glow */
+        }
+        #send-button:hover {
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.8);
+            transform: translateY(-1px);
+        }
+        /* AI message bubble styling */
+        .ai-message {
+            background-color: #1e293b; /* Slate 800 */
+            border-left: 4px solid #38bdf8; /* Sky 400 */
+            transition: opacity 0.3s ease-in-out;
+        }
+        /* Typing animation styles */
+        .typing-indicator span {
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.3s;
+        }
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.6s;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(0.7); opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+
+    <!-- Velora Main Container -->
+    <div id="velora-container" class="w-full max-w-3xl h-[90vh] flex flex-col bg-gray-800 rounded-2xl shadow-2xl overflow-hidden border border-slate-700/50">
+
+        <!-- Header -->
+        <header class="p-4 bg-slate-900 border-b border-slate-700 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="h-3 w-3 rounded-full bg-sky-400 animate-pulse"></div>
+                <h1 class="text-3xl font-extrabold text-white tracking-wider">
+                    Velora
+                </h1>
+                <span class="text-xs text-slate-400 border border-slate-700 rounded-full px-2 py-0.5">
+                    Advanced AI
+                </span>
+            </div>
+            <button id="clear-button" class="text-sm text-slate-400 hover:text-red-400 transition flex items-center space-x-1 p-2 rounded-lg hover:bg-slate-700/50">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                <span>Reset</span>
+            </button>
+        </header>
+
+        <!-- Chat Window -->
+        <main id="chat-window" class="flex-grow p-4 space-y-4 overflow-y-auto chat-window">
+            <!-- Initial Velora Message -->
+            <div class="flex justify-start">
+                <div class="ai-message max-w-3/4 p-3 rounded-xl rounded-tl-sm shadow-md text-white text-sm">
+                    <strong class="text-sky-400">Velora:</strong> Greetings. I am Velora, a sophisticated AI ready to assist you. Ask me anything.
+                </div>
+            </div>
+        </main>
+
+        <!-- Input Area -->
+        <footer class="p-4 bg-slate-900 border-t border-slate-700">
+            <div class="flex space-x-3">
+                <input
+                    type="text"
+                    id="user-input"
+                    placeholder="Type your question here..."
+                    class="flex-grow p-3 rounded-lg border border-slate-700 bg-slate-800 text-white placeholder-slate-500 focus:ring-sky-500 focus:border-sky-500 transition shadow-inner"
+                    autocomplete="off"
+                >
+                <button
+                    id="send-button"
+                    class="p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition"
+                >
+                    <i data-lucide="send" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <!-- Loading/Typing Indicator -->
+            <div id="typing-indicator" class="mt-2 text-sm text-slate-400 hidden flex items-center space-x-2">
+                <div class="typing-indicator flex space-x-1">
+                    <span class="h-1.5 w-1.5 bg-sky-400 rounded-full"></span>
+                    <span class="h-1.5 w-1.5 bg-sky-400 rounded-full"></span>
+                    <span class="h-1.5 w-1.5 bg-sky-400 rounded-full"></span>
+                </div>
+                <span>Velora is synthesizing a response...</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script type="module">
+        // Firebase imports are necessary for all apps in this environment, even if not explicitly using Firestore.
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // Global constants and variables
+        const API_MODEL = 'gemini-2.5-flash-preview-05-20';
+        // IMPORTANT: apiKey is left empty. The secure environment automatically provides the necessary credentials at runtime.
+        const apiKey = ""; 
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const clearButton = document.getElementById('clear-button');
+
+        let chatHistory = [];
+        let isProcessing = false;
+
+        // --- Firebase Setup (Mandatory for Canvas Apps) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let auth;
+        let userId = 'anonymous';
+
+        /**
+         * Initializes Firebase and authenticates the user.
+         */
+        async function initializeFirebase() {
+            if (firebaseConfig) {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    userId = auth.currentUser?.uid || crypto.randomUUID();
+                    console.log('Firebase initialized. User ID:', userId);
+                } catch (error) {
+                    console.error('Firebase authentication failed:', error);
+                }
+            } else {
+                console.warn('Firebase configuration missing. Running without persistent storage.');
+            }
+        }
+
+        // --- Utility Functions ---
+
+        /** Renders Lucide icons after DOM manipulation. */
+        function renderIcons() { lucide.createIcons(); }
+
+        /** Scrolls the chat window to the bottom. */
+        function scrollChatToBottom() { chatWindow.scrollTop = chatWindow.scrollHeight; }
+
+        /**
+         * Displays a message in the chat window.
+         * @param {string} text - The message text.
+         * @param {string} role - 'user' or 'ai'.
+         * @param {Array<Object>} [sources=[]] - Array of source objects for AI messages.
+         */
+        function displayMessage(text, role, sources = []) {
+            const messageElement = document.createElement('div');
+            messageElement.className = 'flex ' + (role === 'user' ? 'justify-end' : 'justify-start');
+
+            const contentElement = document.createElement('div');
+            contentElement.className = 'max-w-[80%] p-3 rounded-xl shadow-lg text-sm transition-all duration-300';
+
+            if (role === 'user') {
+                contentElement.className += ' bg-blue-600 text-white rounded-tr-sm';
+                contentElement.innerHTML = text;
+            } else {
+                // Display text, handling newlines and basic pre-formatting
+                const safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+
+                contentElement.className += ' ai-message rounded-tl-sm text-white whitespace-pre-wrap';
+                contentElement.innerHTML = `<strong class="text-sky-400">Velora:</strong> ${safeText}`;
+
+                if (sources.length > 0) {
+                    const sourceHtml = sources.map((s, index) => `
+                        <a href="${s.uri}" target="_blank" class="text-xs text-sky-400 hover:text-sky-300 hover:underline block mt-1 transition">
+                            <i data-lucide="link" class="w-3 h-3 inline-block mr-1"></i>
+                            Source ${index + 1}: ${s.title || s.uri.split('/')[2]}
+                        </a>
+                    `).join('');
+                    contentElement.innerHTML += `<div class="mt-2 pt-2 border-t border-slate-700/50">${sourceHtml}</div>`;
+                }
+            }
+
+            messageElement.appendChild(contentElement);
+            chatWindow.appendChild(messageElement);
+            renderIcons(); 
+            scrollChatToBottom();
+        }
+
+        /**
+         * Shows or hides the typing indicator and locks/unlocks controls.
+         * @param {boolean} show - True to show, false to hide.
+         */
+        function setTyping(show) {
+            isProcessing = show;
+            typingIndicator.classList.toggle('hidden', !show);
+            sendButton.disabled = show;
+            userInput.disabled = show;
+        }
+
+        // --- Core Gemini API Logic ---
+
+        /**
+         * Makes an API call with exponential backoff for retries.
+         */
+        async function fetchWithRetry(payload, maxRetries = 3, delay = 1000) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${API_MODEL}:generateContent?key=${apiKey}`;
+
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status === 429 && i < maxRetries - 1) {
+                        await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
+                        continue;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`API call failed with status: ${response.status}`);
+                    }
+
+                    return response;
+                } catch (error) {
+                    if (i === maxRetries - 1) {
+                        throw new Error("Velora encountered a critical API error after multiple retries.");
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
+                }
+            }
+        }
+
+        /**
+         * Sends the user message to the Gemini API and updates the chat.
+         * @param {string} userMessage - The user's input text.
+         */
+        async function sendMessage(userMessage) {
+            if (!userMessage.trim() || isProcessing) return;
+
+            displayMessage(userMessage, 'user');
+            userInput.value = '';
+            setTyping(true);
+
+            // Add the user message to the conversation history
+            chatHistory.push({ role: 'user', parts: [{ text: userMessage }] });
+
+            const systemPrompt = "Act as Velora, a sophisticated, highly knowledgeable, and friendly AI assistant. Maintain a cool, slightly formal, and helpful tone. Your primary function is to answer the user's questions accurately and comprehensively, using Markdown for formatting (like lists, bolding, and code blocks). Always start your response with 'Greetings. I am Velora.' and then provide a direct and comprehensive answer.";
+
+            const payload = {
+                contents: chatHistory,
+                // Enable Google Search for real-time, factual answers
+                tools: [{ "google_search": {} }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+                config: {
+                    temperature: 0.7
+                }
+            };
+
+            try {
+                const response = await fetchWithRetry(payload);
+                const result = await response.json();
+                const candidate = result.candidates?.[0];
+
+                let aiResponseText = "I apologize, I seem to have encountered a synthesis error. Please try rephrasing your request.";
+                let sources = [];
+
+                if (candidate && candidate.content?.parts?.[0]?.text) {
+                    aiResponseText = candidate.content.parts[0].text;
+
+                    // Extract grounding sources
+                    const groundingMetadata = candidate.groundingMetadata;
+                    if (groundingMetadata && groundingMetadata.groundingAttributions) {
+                        sources = groundingMetadata.groundingAttributions
+                            .map(attribution => ({
+                                uri: attribution.web?.uri,
+                                title: attribution.web?.title,
+                            }))
+                            .filter(source => source.uri); // Ensure sources are valid
+                    }
+                }
+
+                // Add AI response to history
+                chatHistory.push({ role: 'model', parts: [{ text: aiResponseText }] });
+
+                displayMessage(aiResponseText, 'ai', sources);
+
+            } catch (error) {
+                console.error('API Error:', error);
+                const errorMessage = "Velora: I apologize, a critical error occurred while connecting to my knowledge base. Please try using the Preview again.";
+                displayMessage(errorMessage, 'ai');
+                // Remove the last user message from history if the AI failed to respond
+                chatHistory.pop();
+            } finally {
+                setTyping(false);
+            }
+        }
+
+        /** Resets the entire chat conversation. */
+        function resetChat() {
+            chatHistory = [];
+            chatWindow.innerHTML = `
+                <div class="flex justify-start">
+                    <div class="ai-message max-w-3/4 p-3 rounded-xl rounded-tl-sm shadow-md text-white text-sm">
+                        <strong class="text-sky-400">Velora:</strong> Greetings. I am Velora, a sophisticated AI ready to assist you. Ask me anything.
+                    </div>
+                </div>
+            `;
+            scrollChatToBottom();
+            userInput.value = '';
+            setTyping(false);
+            renderIcons();
+        }
+
+        // --- Event Listeners and Initialization ---
+
+        sendButton.addEventListener('click', () => {
+            sendMessage(userInput.value);
+        });
+
+        userInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !isProcessing) {
+                event.preventDefault(); 
+                sendMessage(userInput.value);
+            }
+        });
+
+        clearButton.addEventListener('click', resetChat);
+
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeFirebase();
+            resetChat(); 
+        });
+
+    </script>
+</body>
+</html>
+
